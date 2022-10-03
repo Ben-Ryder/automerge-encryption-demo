@@ -9,6 +9,14 @@ const app: Express = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+/**
+ * Changes consist of two things:
+ * - a unique ID used to identify changes across devices and the server for syncing
+ * - a data string contains the Automerge change encrypted client side
+ *
+ * In this proof on concept changes are stored in memory and are only persisted while the server runs.
+ * In a real implementation you could persist this to some kind of database, the file system etc.
+ */
 interface Change {
   id: string,
   change: string
