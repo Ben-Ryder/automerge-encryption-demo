@@ -7,7 +7,14 @@ import cors from "cors";
 const port = process.env.PORT || 3000;
 
 const app: Express = express();
-app.use(cors);
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*"
+  }
+});
+
+app.use(cors());
 
 /**
  * Changes consist of two things:
@@ -28,7 +35,7 @@ const changes: Change[] = [];
  * Just a home route.
  */
 app.get('/', (req: Request, res: Response) => {
-  res.send("Welcome to the Automerge encryption poc server")
+  return res.send("Welcome to the Automerge encryption poc server")
 })
 
 /**
@@ -42,11 +49,11 @@ app.get('/changes', (req: Request, res: Response) => {
   if (Array.isArray(changeIds) && changeIds.length > 0) {
     const changesToSend = changes.filter(change => changeIds.includes(change.id));
     console.log(`[server]: request - sending changes to client: [${changesToSend.join(",")}]`);
-    res.send(changesToSend);
+    return res.send(changesToSend);
   }
   else {
     console.log("[server]: request - sending all changes to client");
-    res.send(changes);
+    return res.send(changes);
   }
 });
 
@@ -56,16 +63,12 @@ app.get('/changes', (req: Request, res: Response) => {
  */
 app.get('/changes/ids', (req: Request, res: Response) => {
   console.log("[server]: request - sending all ids to client");
-  res.send(changes.map(change => change.id));
+  return res.send(changes.map(change => change.id));
 });
 
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*"
-  }
+app.use((req, res, next) =>{
+  return res.status(404).send("Route not found")
 });
-
 
 io.on('connection', (socket) => {
   console.log('[server]: socket - client connection to socket');
@@ -75,11 +78,12 @@ io.on('connection', (socket) => {
    * This event can be used to broadcast/receive a single change event
    */
   socket.on("change", (change) => {
-    if (!changes.includes(change.id)) {
-      console.log(`[server]: socket - received new change from client: ${change.id}`);
+    const changeIds = changes.map(c => c.id);
+    if (!changeIds.includes(change.id)) {
+      console.log(`[server]: socket - received new change from client: ${change.id}. saving to server and broadcasting out`);
 
       // Emit change to any other clients connected
-      socket.emit("change", change);
+      socket.broadcast.emit("change", change);
 
       // Save changes to the server
       changes.push(change);
@@ -102,7 +106,7 @@ io.on('connection', (socket) => {
         console.log(`[server]: socket - received new change from client: ${change.id}`);
 
         // Emit change to any other clients connected
-        socket.emit("change", change);
+        socket.broadcast.emit("change", change);
 
         // Save changes to the server
         changes.push(change);

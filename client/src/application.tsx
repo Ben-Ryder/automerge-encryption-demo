@@ -8,6 +8,8 @@ import {Change} from "./local-store";
 import { io } from "socket.io-client";
 import axios from "axios";
 
+const serverUrl = "http://192.168.1.181:3000"
+
 interface NoteContent {
   title: string,
   body: string
@@ -39,7 +41,22 @@ const localStore = new LocalStore();
 
 // Setup broadcast channel to sync changes between tabs, windows etc
 const browserChannel = new BroadcastChannel("changes");
-const socket = io("http://localhost:3000");
+const socket = io(serverUrl);
+
+function decryptChanges(encryptedChanges: Change[]): BinaryChange[] {
+  return encryptedChanges.map(encryptedChange => {
+    const change = Encryption.decryptText(encryptionSecret, encryptedChange.change).replaceAll("\"", "");
+    return new Uint8Array([...atob(change)].map(char => char.charCodeAt(0))) as BinaryChange;
+  });
+}
+
+/**
+ * A dirty hack to get around Automerge + react state issues where repeating
+ * the useEffect in strict mode repeats changes being applied and breaks as the document is then "outdated"
+ * todo: look at proper, none hacky fix and a better way of handling Automerge in state.
+ */
+let setupOnce = false;
+let serverSyncOnce = false;
 
 function Application() {
   const [loading, setLoading] = useState<boolean>(true);
@@ -60,6 +77,8 @@ function Application() {
     }
     setDoc(newDoc);
     localStore.addChange(change);
+
+    console.log(`made change ${change.id}. broadcasting to channel and sending socket event`)
     browserChannel.postMessage({type: "change", data: change});
     socket.emit("change", change);
   }
@@ -91,20 +110,21 @@ function Application() {
     })
   }
 
-  function applyChanges(existingDoc: Automerge.FreezeObject<Document>, encryptedChanges: Change[]) {
-    const changes: BinaryChange[] = encryptedChanges.map(encryptedChange => {
-      const change = Encryption.decryptText(encryptionSecret, encryptedChange.change).replaceAll("\"", "");
-      return new Uint8Array([...atob(change)].map(char => char.charCodeAt(0))) as BinaryChange;
-    });
-    const [newDoc] = Automerge.applyChanges<Document>(existingDoc, changes);
+  async function applyRemoteChanges(remoteEncryptedChanges: Change[]) {
+    for (const change of remoteEncryptedChanges) {
+      await localStore.addChange(change);
+    }
+
+    const encryptedChanges = await localStore.loadAllChanges();
+    const changes = decryptChanges(encryptedChanges);
+    const [newDoc] = Automerge.applyChanges<Document>(Automerge.clone(initialDoc), changes);
     setDoc(newDoc);
   }
 
   /**
    * Initial setup which does the following
-   * - Loads the existing document snapshot if it exists
-   * - Triggers the changes to be loaded in the background (which will update the state & snapshot if different)
-   * - Triggers a background sync with the server (which will update the state & snapshot if different)
+   * - Loads the local changes
+   * - Triggers a sync with the server
    * - Sets up the websocket connection to listen for new changes from the server and to be ready to emit changes
    * - Sets up a broadcast channel to broadcast changes to other running instances of the app (such as other tabs).
    */
@@ -112,44 +132,68 @@ function Application() {
     async function setup() {
       // Load changes from local
       const encryptedChanges = await localStore.loadAllChanges();
-      applyChanges(Automerge.clone(initialDoc), encryptedChanges);
+      const changes = decryptChanges(encryptedChanges);
+      const [docFromStorage] = Automerge.applyChanges(Automerge.clone(initialDoc), changes);
+      setDoc(docFromStorage);
       setLoading(false);
+    }
 
+    if (setupOnce) {
+      setup();
+    }
+    else {
+      setupOnce = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    async function syncWithServer() {
       // Sync up changes from server
       const localIds = await localStore.loadAllChangeIds();
-      const serverIds: string[] = await axios.get("http://localhost:3000/changes/ids")
+      const serverIds: string[] = await axios.get(`${serverUrl}/changes/ids`)
           .then(res => res.data);
 
-      const changeIdsOnServer = serverIds.filter(id => !localIds.includes(id));
-      const changesIdsForServer = localIds.filter(id => !serverIds.includes(id));
+      const newIdsOnServer = serverIds.filter(id => !localIds.includes(id));
+      const newIdsOnClient = localIds.filter(id => !serverIds.includes(id));
 
-      const changesForServer = await localStore.loadChanges(changesIdsForServer);
-      socket.emit("changes", changesForServer);
+      if (newIdsOnClient.length > 0) {
+        const changesForServer = await localStore.loadChanges(newIdsOnClient);
+        socket.emit("changes", changesForServer);
+      }
 
-      const changesFromServer = await axios
-          .get<Change[]>("http://localhost:3000/changes", {
+      if (newIdsOnServer.length > 0) {
+        const changesFromServer = await axios
+          .get<Change[]>(`${serverUrl}/changes`, {
             params: {
-              ids: changeIdsOnServer
+              ids: newIdsOnServer
             }
           })
           .then(res => res.data);
-      applyChanges(doc, changesFromServer);
+        applyRemoteChanges(changesFromServer);
+      }
     }
-    setup();
+    if (serverSyncOnce) {
+      syncWithServer();
+    }
+    else {
+      serverSyncOnce = true;
+    }
   }, []);
 
   browserChannel.onmessage = (event) => {
-    console.log(event);
     if (event.data.type === "change") {
-      applyChanges(doc, [event.data.data]);
+      console.log("received change from broadcast channel: " + event.data.data.id);
+      applyRemoteChanges([event.data.data]);
     }
   };
 
-  socket.on("change", (change) => {
-    applyChanges(doc, [change]);
+  socket.on("change", (change: Change) => {
+    console.log("received change from websocket: " + change.id);
+    applyRemoteChanges([change]);
   });
-  socket.on("changes", (changes) => {
-    applyChanges(doc, changes);
+  socket.on("changes", (changes: Change[]) => {
+    console.log(`received changes from websocket: [${changes.map(c => c.id).join(",")}]`);
+    applyRemoteChanges(changes);
   });
 
   return (
