@@ -2,12 +2,12 @@ import express from 'express';
 import {Express, Request, Response} from "express";
 import {Server} from "socket.io";
 import * as http from "http";
+import cors from "cors";
 
 const port = process.env.PORT || 3000;
 
 const app: Express = express();
-const server = http.createServer(app);
-const io = new Server(server);
+app.use(cors);
 
 /**
  * Changes consist of two things:
@@ -51,18 +51,6 @@ app.get('/changes', (req: Request, res: Response) => {
 });
 
 /**
- * /changes [POST]
- * This endpoint can be used to add new changes.
- * This is useful when reconnecting and syncing multiple changes quickly
- * rather than emitting them all separately via the websocket.
- */
-app.post('/changes', (req: Request, res: Response) => {
-  console.log("[server]: request - adding change from client");
-  changes.push(req.body);
-  res.send();
-});
-
-/**
  * /changes/ids [GET]
  * This endpoint can be used to fetch all change ids.
  */
@@ -71,13 +59,20 @@ app.get('/changes/ids', (req: Request, res: Response) => {
   res.send(changes.map(change => change.id));
 });
 
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*"
+  }
+});
+
 
 io.on('connection', (socket) => {
-  console.log('[server]: socket - client connected to socket');
+  console.log('[server]: socket - client connection to socket');
 
   /**
    * 'change' event
-   * This endpoint can be used to fetch all change ids.
+   * This event can be used to broadcast/receive a single change event
    */
   socket.on("change", (change) => {
     if (!changes.includes(change.id)) {
@@ -91,6 +86,30 @@ io.on('connection', (socket) => {
     }
     else {
       console.log(`[server]: socket - received existing change from client: ${change.id}`);
+    }
+  })
+
+  /**
+   * 'changes' event
+   * This event can be used to broadcast/receive multiple change events
+   */
+  socket.on("changes", (receivedChanges: Change[]) => {
+    console.log(`[server]: socket - received changes from client: [${receivedChanges.map(c => c.id).join(",")}]`);
+
+    for (const change of receivedChanges) {
+      const changeIds = changes.map(c => c.id);
+      if (!changeIds.includes(change.id)) {
+        console.log(`[server]: socket - received new change from client: ${change.id}`);
+
+        // Emit change to any other clients connected
+        socket.emit("change", change);
+
+        // Save changes to the server
+        changes.push(change);
+      }
+      else {
+        console.log(`[server]: socket - received existing change from client: ${change.id}`);
+      }
     }
   })
 
