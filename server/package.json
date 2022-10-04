@@ -1,5 +1,5 @@
 {
-  "name": "automerge-encryption-poc-server",
+  "name": "automerge-encryption-demo-server",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",

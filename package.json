@@ -1,5 +1,5 @@
 {
-  "name": "automerge-encryption-poc",
+  "name": "automerge-encryption-demo",
   "version": "1.0.0",
   "description": "This repo is a proof of concept for using Automerge with client-side encryption.",
   "main": "index.js",
@@ -12,7 +12,7 @@
     "start:client": "cd client && npm start"
   },
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "concurrently": "^7.4.0"
   }
