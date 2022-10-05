@@ -111,14 +111,21 @@ function Application() {
   }
 
   async function applyRemoteChanges(remoteEncryptedChanges: Change[]) {
+    let receivedNewChanges = false;
+    const changeIds = await localStore.loadAllChangeIds();
     for (const change of remoteEncryptedChanges) {
-      await localStore.addChange(change);
+      if (!changeIds.includes(change.id)) {
+        await localStore.addChange(change);
+        receivedNewChanges = true;
+      }
     }
 
-    const encryptedChanges = await localStore.loadAllChanges();
-    const changes = decryptChanges(encryptedChanges);
-    const [newDoc] = Automerge.applyChanges<Document>(Automerge.clone(initialDoc), changes);
-    setDoc(newDoc);
+    if (receivedNewChanges) {
+      const encryptedChanges = await localStore.loadAllChanges();
+      const changes = decryptChanges(encryptedChanges);
+      const [newDoc] = Automerge.applyChanges<Document>(Automerge.clone(initialDoc), changes);
+      setDoc(newDoc);
+    }
   }
 
   /**
@@ -140,6 +147,15 @@ function Application() {
 
     if (setupOnce) {
       setup();
+
+      socket.on("change", (change: Change) => {
+        console.log("received change from websocket: " + change.id);
+        applyRemoteChanges([change]);
+      });
+      socket.on("changes", (changes: Change[]) => {
+        console.log(`received changes from websocket: [${changes.map(c => c.id).join(",")}]`);
+        applyRemoteChanges(changes);
+      });
     }
     else {
       setupOnce = true;
@@ -186,15 +202,6 @@ function Application() {
       applyRemoteChanges([event.data.data]);
     }
   };
-
-  socket.on("change", (change: Change) => {
-    console.log("received change from websocket: " + change.id);
-    applyRemoteChanges([change]);
-  });
-  socket.on("changes", (changes: Change[]) => {
-    console.log(`received changes from websocket: [${changes.map(c => c.id).join(",")}]`);
-    applyRemoteChanges(changes);
-  });
 
   return (
       <>
