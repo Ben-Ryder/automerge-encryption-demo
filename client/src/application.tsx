@@ -8,8 +8,6 @@ import {Change} from "./local-store";
 import { io } from "socket.io-client";
 import axios from "axios";
 
-const serverUrl = "http://192.168.1.181:3000"
-
 interface NoteContent {
   title: string,
   body: string
@@ -41,7 +39,7 @@ const localStore = new LocalStore();
 
 // Setup broadcast channel to sync changes between tabs, windows etc
 const browserChannel = new BroadcastChannel("changes");
-const socket = io(serverUrl);
+const socket = io(import.meta.env.VITE_SERVER_URL);
 
 function decryptChanges(encryptedChanges: Change[]): BinaryChange[] {
   return encryptedChanges.map(encryptedChange => {
@@ -166,7 +164,7 @@ function Application() {
     async function syncWithServer() {
       // Sync up changes from server
       const localIds = await localStore.loadAllChangeIds();
-      const serverIds: string[] = await axios.get(`${serverUrl}/changes/ids`)
+      const serverIds: string[] = await axios.get(`${import.meta.env.VITE_SERVER_URL}/changes/ids`)
           .then(res => res.data);
 
       const newIdsOnServer = serverIds.filter(id => !localIds.includes(id));
@@ -179,7 +177,7 @@ function Application() {
 
       if (newIdsOnServer.length > 0) {
         const changesFromServer = await axios
-          .get<Change[]>(`${serverUrl}/changes`, {
+          .get<Change[]>(`${import.meta.env.VITE_SERVER_URL}/changes`, {
             params: {
               ids: newIdsOnServer
             }
