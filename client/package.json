@@ -13,6 +13,7 @@
     "automerge": "^1.0.1-preview.7",
     "axios": "^0.27.2",
     "crypto-js": "^4.1.1",
+    "dexie": "^3.2.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "socket.io-client": "^4.5.2",

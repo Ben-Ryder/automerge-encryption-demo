@@ -1,12 +1,11 @@
 import {useEffect, useState} from 'react'
 import * as Automerge from "automerge";
 import {BinaryChange} from "automerge";
-import {LocalStore} from "./local-store";
 import {Encryption, encryptionSecret} from "./encryption";
 import {v4 as createUUID} from "uuid";
-import {Change} from "./local-store";
 import { io } from "socket.io-client";
 import axios from "axios";
+import {Change, LocalStore} from "./storage/local-store";
 
 interface NoteContent {
   title: string,
@@ -63,7 +62,7 @@ function Application() {
   const [newNoteTitle, setNewNoteTitle] = useState<string>("");
   const [newNoteBody, setNewNoteBody] = useState<string>("");
 
-  function makeChange(changeFunc: Automerge.ChangeFn<Document>) {
+  async function makeChange(changeFunc: Automerge.ChangeFn<Document>) {
     const newDoc = Automerge.change(doc, changeFunc);
     const rawChange = Automerge.getLastLocalChange(newDoc);
 
@@ -74,7 +73,7 @@ function Application() {
       change: encryptedChange
     }
     setDoc(newDoc);
-    localStore.addChange(change);
+    await localStore.saveChange(change);
 
     console.log(`made change ${change.id}. broadcasting to channel and sending socket event`)
     browserChannel.postMessage({type: "change", data: change});
@@ -109,21 +108,17 @@ function Application() {
   }
 
   async function applyRemoteChanges(remoteEncryptedChanges: Change[]) {
-    let receivedNewChanges = false;
     const changeIds = await localStore.loadAllChangeIds();
     for (const change of remoteEncryptedChanges) {
       if (!changeIds.includes(change.id)) {
-        await localStore.addChange(change);
-        receivedNewChanges = true;
+        await localStore.saveChange(change);
       }
     }
 
-    if (receivedNewChanges) {
-      const encryptedChanges = await localStore.loadAllChanges();
-      const changes = decryptChanges(encryptedChanges);
-      const [newDoc] = Automerge.applyChanges<Document>(Automerge.clone(initialDoc), changes);
-      setDoc(newDoc);
-    }
+    const encryptedChanges = await localStore.loadAllChanges();
+    const changes = decryptChanges(encryptedChanges);
+    const [newDoc] = Automerge.applyChanges<Document>(Automerge.clone(initialDoc), changes);
+    setDoc(newDoc);
   }
 
   /**
