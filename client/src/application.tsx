@@ -5,7 +5,8 @@ import {Encryption, encryptionSecret} from "./encryption";
 import {v4 as createUUID} from "uuid";
 import { io } from "socket.io-client";
 import axios from "axios";
-import {Change, LocalStore} from "./storage/local-store";
+import {LocalStore} from "./storage/local-store";
+import {Change} from "./common/change";
 
 interface NoteContent {
   title: string,
@@ -57,6 +58,7 @@ let serverSyncOnce = false;
 
 function Application() {
   const [loading, setLoading] = useState<boolean>(true);
+  const [online, setOnline] = useState<boolean>(navigator.onLine);
   const [doc, setDoc] = useState<Automerge.FreezeObject<Document>>(Automerge.clone(initialDoc));
 
   const [newNoteTitle, setNewNoteTitle] = useState<string>("");
@@ -76,8 +78,12 @@ function Application() {
     await localStore.saveChange(change);
 
     console.log(`made change ${change.id}. broadcasting to channel and sending socket event`)
-    browserChannel.postMessage({type: "change", data: change});
-    socket.emit("change", change);
+    if (online) {
+      socket.volatile.emit("changes", [change]);
+    }
+    else {
+      browserChannel.postMessage({type: "changes", changes: [change]});
+    }
   }
 
   function editNoteTitle(noteId: string, updatedTitle: string) {
@@ -121,6 +127,32 @@ function Application() {
     setDoc(newDoc);
   }
 
+  async function syncWithServer() {
+    // Sync up changes from server
+    const localIds = await localStore.loadAllChangeIds();
+    const serverIds: string[] = await axios.get(`${import.meta.env.VITE_SERVER_URL}/changes/ids`)
+      .then(res => res.data);
+
+    const newIdsOnServer = serverIds.filter(id => !localIds.includes(id));
+    const newIdsOnClient = localIds.filter(id => !serverIds.includes(id));
+
+    if (newIdsOnClient.length > 0) {
+      const changesForServer = await localStore.loadChanges(newIdsOnClient);
+      socket.emit("changes", changesForServer);
+    }
+
+    if (newIdsOnServer.length > 0) {
+      const changesFromServer = await axios
+        .get<Change[]>(`${import.meta.env.VITE_SERVER_URL}/changes`, {
+          params: {
+            ids: newIdsOnServer
+          }
+        })
+        .then(res => res.data);
+      applyRemoteChanges(changesFromServer);
+    }
+  }
+
   /**
    * Initial setup which does the following
    * - Loads the local changes
@@ -141,13 +173,19 @@ function Application() {
     if (setupOnce) {
       setup();
 
-      socket.on("change", (change: Change) => {
-        console.log("received change from websocket: " + change.id);
-        applyRemoteChanges([change]);
-      });
       socket.on("changes", (changes: Change[]) => {
         console.log(`received changes from websocket: [${changes.map(c => c.id).join(",")}]`);
         applyRemoteChanges(changes);
+      });
+
+      window.addEventListener("online", () => {
+        console.log("app detected as coming back online");
+        setOnline(true);
+        syncWithServer();
+      });
+      window.addEventListener("offline", () => {
+        console.log("app detected as going offline");
+        setOnline(false);
       });
     }
     else {
@@ -156,32 +194,7 @@ function Application() {
   }, []);
 
   useEffect(() => {
-    async function syncWithServer() {
-      // Sync up changes from server
-      const localIds = await localStore.loadAllChangeIds();
-      const serverIds: string[] = await axios.get(`${import.meta.env.VITE_SERVER_URL}/changes/ids`)
-          .then(res => res.data);
-
-      const newIdsOnServer = serverIds.filter(id => !localIds.includes(id));
-      const newIdsOnClient = localIds.filter(id => !serverIds.includes(id));
-
-      if (newIdsOnClient.length > 0) {
-        const changesForServer = await localStore.loadChanges(newIdsOnClient);
-        socket.emit("changes", changesForServer);
-      }
-
-      if (newIdsOnServer.length > 0) {
-        const changesFromServer = await axios
-          .get<Change[]>(`${import.meta.env.VITE_SERVER_URL}/changes`, {
-            params: {
-              ids: newIdsOnServer
-            }
-          })
-          .then(res => res.data);
-        applyRemoteChanges(changesFromServer);
-      }
-    }
-    if (serverSyncOnce) {
+    if (serverSyncOnce && online) {
       syncWithServer();
     }
     else {
@@ -189,10 +202,10 @@ function Application() {
     }
   }, []);
 
-  browserChannel.onmessage = (event) => {
-    if (event.data.type === "change") {
-      console.log("received change from broadcast channel: " + event.data.data.id);
-      applyRemoteChanges([event.data.data]);
+  browserChannel.onmessage = (event: MessageEvent<{type: "changes", changes: Change[]}>) => {
+    if (event.data.type === "changes") {
+      console.log("received changes from broadcast channel: " + event.data.changes.map(c => c.id).join(","));
+      applyRemoteChanges(event.data.changes);
     }
   };
 

@@ -1,5 +1,6 @@
 import Dexie, { Table } from 'dexie';
-import {Change} from "./local-store";
+import {Change} from "../common/change";
+
 
 export class ChangesDatabase extends Dexie {
   changes!: Table<Change>;

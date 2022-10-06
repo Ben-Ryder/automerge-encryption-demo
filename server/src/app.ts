@@ -74,26 +74,6 @@ io.on('connection', (socket) => {
   console.log('[server]: socket - client connection to socket');
 
   /**
-   * 'change' event
-   * This event can be used to broadcast/receive a single change event
-   */
-  socket.on("change", (change) => {
-    const changeIds = changes.map(c => c.id);
-    if (!changeIds.includes(change.id)) {
-      console.log(`[server]: socket - received new change from client: ${change.id}. saving to server and broadcasting out`);
-
-      // Emit change to any other clients connected
-      socket.broadcast.emit("change", change);
-
-      // Save changes to the server
-      changes.push(change);
-    }
-    else {
-      console.log(`[server]: socket - received existing change from client: ${change.id}`);
-    }
-  })
-
-  /**
    * 'changes' event
    * This event can be used to broadcast/receive multiple change events
    */
@@ -106,7 +86,7 @@ io.on('connection', (socket) => {
         console.log(`[server]: socket - received new change from client: ${change.id}`);
 
         // Emit change to any other clients connected
-        socket.broadcast.emit("change", change);
+        socket.broadcast.volatile.emit("change", change);
 
         // Save changes to the server
         changes.push(change);

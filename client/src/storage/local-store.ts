@@ -1,9 +1,5 @@
 import {db} from "./db";
-
-export interface Change {
-    id: string,
-    change: string
-}
+import {Change} from "../common/change";
 
 
 export class LocalStore {
