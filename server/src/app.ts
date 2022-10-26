@@ -35,7 +35,7 @@ const changes: Change[] = [];
  * Just a home route.
  */
 app.get('/', (req: Request, res: Response) => {
-  return res.send("Welcome to the Automerge encryption poc server")
+  return res.send("Welcome to the automerge-encryption-poc server")
 })
 
 /**
