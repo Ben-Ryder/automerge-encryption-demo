@@ -37,6 +37,8 @@ const [initialDoc] = Automerge.applyChanges<Document>(Automerge.init(), [initial
 
 const localStore = new LocalStore();
 
+console.log(`Server setup as ${import.meta.env.VITE_SERVER_URL}`);
+
 // Setup broadcast channel to sync changes between tabs, windows etc
 const browserChannel = new BroadcastChannel("changes");
 const socket = io(import.meta.env.VITE_SERVER_URL);
