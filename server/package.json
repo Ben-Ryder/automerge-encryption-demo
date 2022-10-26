@@ -4,10 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "npm run dev",
+    "start": "npm run build && node build/src/server.js",
     "dev": "nodemon src/app.ts",
-    "build": "rimraf ./build && tsc",
-    "serve": "npm run build && node build/src/server.js"
+    "build": "rimraf ./build && tsc"
   },
   "author": "",
   "license": "ISC",
