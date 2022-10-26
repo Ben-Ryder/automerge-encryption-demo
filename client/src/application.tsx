@@ -53,8 +53,8 @@ function decryptChanges(encryptedChanges: Change[]): BinaryChange[] {
  * the useEffect in strict mode repeats changes being applied and breaks as the document is then "outdated"
  * todo: look at proper, none hacky fix and a better way of handling Automerge in state.
  */
-let setupOnce = false;
-let serverSyncOnce = false;
+let setupOnce = true;
+let serverSyncOnce = true;
 
 function Application() {
   const [loading, setLoading] = useState<boolean>(true);
