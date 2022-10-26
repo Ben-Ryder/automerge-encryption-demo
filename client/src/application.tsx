@@ -77,11 +77,12 @@ function Application() {
     setDoc(newDoc);
     await localStore.saveChange(change);
 
-    console.log(`made change ${change.id}. broadcasting to channel and sending socket event`)
     if (online) {
-      socket.volatile.emit("changes", [change]);
+      console.log(`made change ${change.id}. broadcasting to socket`);
+      socket.emit("changes", [change]);
     }
     else {
+      console.log(`made change ${change.id}. broadcasting to browser`);
       browserChannel.postMessage({type: "changes", changes: [change]});
     }
   }

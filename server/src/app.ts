@@ -83,18 +83,18 @@ io.on('connection', (socket) => {
     for (const change of receivedChanges) {
       const changeIds = changes.map(c => c.id);
       if (!changeIds.includes(change.id)) {
-        console.log(`[server]: socket - received new change from client: ${change.id}`);
-
-        // Emit change to any other clients connected
-        socket.broadcast.volatile.emit("change", change);
-
         // Save changes to the server
         changes.push(change);
+
+        console.log(`[server]: socket - received new change from client: ${change.id}`);
       }
       else {
         console.log(`[server]: socket - received existing change from client: ${change.id}`);
       }
     }
+
+    // Emit new change to any other clients connected
+    socket.broadcast.emit("changes", receivedChanges);
   })
 
   socket.on("disconnect", () => {
